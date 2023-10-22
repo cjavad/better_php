@@ -1,6 +1,7 @@
 [workspace]
 members = [
-    "crates/a_parser"
+    "crates/a_parser",
+    "crates/a_regex_macro",
 ]
 
 [package]

@@ -1,4 +1,5 @@
 use logos::{Logos, Lexer};
+use a_regex_macro::regex_ignore_case;
 
 #[derive(Debug, PartialEq, Clone, Copy)]
 pub enum BinaryOpKind {
@@ -9,10 +10,13 @@ pub enum BinaryOpKind {
     Mod,
     Pow,
     And,
+    AndAlt,
     BitAnd,
     BitOr,
     Or,
+    OrAlt,
     Xor,
+    XorAlt,
     Shl,
     Shr,
     Greater,
@@ -50,10 +54,23 @@ pub enum UnaryOpKind {
     Minus,
     Inc,
     Dec,
+    ArrayCast,
+    BoolCast,
+    DoubleCast,
+    IntCast,
+    ObjectCast,
+    StringCast,
+    BinaryStringCast,
+    NullCast,
+    // Used by parser.
+    PreInc,
+    PreDec,
 }
 
 #[derive(Debug, PartialEq, Clone, Copy)]
 pub enum KeywordKind {
+    // I will abuse this one
+    Var,
     For,
     ForEach,
     While,
@@ -83,6 +100,12 @@ pub enum KeywordKind {
     Try,
     Catch,
     Finally,
+    EndSwitch,
+    EndDeclare,
+    EndWhile,
+    EndFor,
+    EndForeach,
+    EndIf,
     Do,
     Const,
     Abstract,
@@ -102,6 +125,24 @@ pub enum KeywordKind {
     Self_,
     Parent,
     Global,
+    List,
+    Array,
+    Echo,
+    Print,
+    Eval,
+    Unset,
+    Isset,
+    Die,
+    Empty,
+    // Why PHP why?
+    HaltCompiler,
+    Insteadof,
+    Instanceof,
+    Require,
+    RequireOnce,
+    Include,
+    IncludeOnce,
+    Declare,
 }
 
 #[derive(Debug, PartialEq, Clone)]
@@ -160,11 +201,24 @@ pub enum TokenKind {
     #[token(r"!", |_| UnaryOpKind::Not)]
     #[token(r"++", |_| UnaryOpKind::Inc)]
     #[token(r"--", |_| UnaryOpKind::Dec)]
+    #[token(r"(int)", |_| UnaryOpKind::IntCast)]
+    #[token(r"(float)", |_| UnaryOpKind::DoubleCast)]
+    #[token(r"(double)", |_| UnaryOpKind::DoubleCast)]
+    #[token(r"(real)", |_| UnaryOpKind::DoubleCast)]
+    #[token(r"(string)", |_| UnaryOpKind::StringCast)]
+    #[token(r"(array)", |_| UnaryOpKind::ArrayCast)]
+    #[token(r"(object)", |_| UnaryOpKind::ObjectCast)]
+    #[token(r"(bool)", |_| UnaryOpKind::BoolCast)]
+    #[token(r"(boolean)", |_| UnaryOpKind::BoolCast)]
+    #[token(r"(binary)", |_| UnaryOpKind::BinaryStringCast)]
+    // Technically deprecated but it is so fun i will keep it.
+    #[token(r"(unset)", |_| UnaryOpKind::NullCast)]
     UnaryOp(UnaryOpKind),
 
-    #[token(r"true", |_| KeywordKind::True)]
-    #[token(r"false", |_| KeywordKind::False)]
-    #[token(r"null", |_| KeywordKind::Null)]
+    #[token(r"var", |_| KeywordKind::Var)]
+    #[regex(r"[Tt][Rr][Uu][Ee]", |_| KeywordKind::True)]
+    #[regex(r"[Ff][Aa][Ll][Ss][Ee]", |_| KeywordKind::False)]
+    #[regex(r"[Nn][Uu][Ll][Ll]", |_| KeywordKind::Null)]
     #[token(r"self", |_| KeywordKind::Self_)]
     #[token(r"parent", |_| KeywordKind::Parent)]
     #[token(r"global", |_| KeywordKind::Global)]
@@ -197,6 +251,12 @@ pub enum TokenKind {
     #[token(r"try", |_| KeywordKind::Try)]
     #[token(r"catch", |_| KeywordKind::Catch)]
     #[token(r"finally", |_| KeywordKind::Finally)]
+    #[token(r"endswitch", |_| KeywordKind::EndSwitch)]
+    #[token(r"enddeclare", |_| KeywordKind::EndDeclare)]
+    #[token(r"endwhile", |_| KeywordKind::EndWhile)]
+    #[token(r"endfor", |_| KeywordKind::EndFor)]
+    #[token(r"endforeach", |_| KeywordKind::EndForeach)]
+    #[token(r"endif", |_| KeywordKind::EndIf)]
     #[token(r"do", |_| KeywordKind::Do)]
     #[token(r"const", |_| KeywordKind::Const)]
     #[token(r"abstract", |_| KeywordKind::Abstract)]
@@ -210,6 +270,24 @@ pub enum TokenKind {
     #[token(r"clone", |_| KeywordKind::Clone)]
     #[token(r"yield", |_| KeywordKind::Yield)]
     #[token(r"yield from", |_| KeywordKind::YieldFrom)]
+    #[token(r"list", |_| KeywordKind::List)]
+    #[token(r"array", |_| KeywordKind::Array)]
+    #[token(r"echo", |_| KeywordKind::Echo)]
+    #[token(r"print", |_| KeywordKind::Print)]
+    #[token(r"eval", |_| KeywordKind::Eval)]
+    #[token(r"unset", |_| KeywordKind::Unset)]
+    #[token(r"isset", |_| KeywordKind::Isset)]
+    #[token(r"die", |_| KeywordKind::Die)]
+    #[token(r"exit", |_| KeywordKind::Die)]
+    #[token(r"empty", |_| KeywordKind::Empty)]
+    #[token(r"__halt_compiler", |_| KeywordKind::HaltCompiler)]
+    #[token(r"insteadof", |_| KeywordKind::Insteadof)]
+    #[token(r"instanceof", |_| KeywordKind::Instanceof)]
+    #[token(r"require", |_| KeywordKind::Require)]
+    #[token(r"require_once", |_| KeywordKind::RequireOnce)]
+    #[token(r"include", |_| KeywordKind::Include)]
+    #[token(r"include_once", |_| KeywordKind::IncludeOnce)]
+    #[token(r"declare", |_| KeywordKind::Declare)]
     Keyword(KeywordKind),
 
     #[token(r"<?")]
@@ -223,7 +301,7 @@ pub enum TokenKind {
     #[token(r"%>")]
     EndTag,
 
-    #[token("#[", priority = 12)]
+    #[token("#[")]
     Attribute,
     
     #[token("(")]
@@ -278,7 +356,8 @@ pub enum TokenKind {
     Identifier(IdentifierKind),
 
 
-    #[regex(r"[0-9]+\.[0-9]+", |lex| lex.slice().parse().unwrap_or(0.0))]
+    // Match 2.0, 256.4, 10.358, 7.64E+5, 5.56E-5
+    #[regex(r"[0-9]*\.[0-9]+([eE][+-]?[0-9]+)?", |lex| lex.slice().parse().unwrap_or(0.0))]
     Double(f64),
 
     #[regex(r"[0-9]+", |lex| lex.slice().parse().unwrap_or(0))]
@@ -290,6 +369,9 @@ pub enum TokenKind {
     // Double quoted string both ' and " are supported
     #[regex(r#""([^"\\]|\\.)*""#, |lex| lex.slice()[1..lex.slice().len()-1].to_string())]
     #[regex(r#"'([^'\\]|\\.)*'"#, |lex| lex.slice()[1..lex.slice().len()-1].to_string())]
+    // Also support b'' and b"" but treat input as ascii 0-255 without utf8 support
+    #[regex(r#"b"([^"\\]|\\.)*""#, |lex| lex.slice()[2..lex.slice().len()-1].to_string())]
+    #[regex(r#"b'([^'\\]|\\.)*'"#, |lex| lex.slice()[2..lex.slice().len()-1].to_string())]
     String(String),
 
 
@@ -308,6 +390,8 @@ pub fn lexerize(input: &str) -> Lexer<TokenKind> {
 
 #[cfg(test)]
 mod tests {
+    use core::panic;
+
     use super::*;
 
     // Write test macro to replace Some(Ok()) and assert_eq!()
@@ -328,6 +412,11 @@ mod tests {
                 }
             }
         };
+    }
+
+    #[test]
+    fn test() {
+        assert_single_token!("b\"\"", TokenKind::String("".to_string()));
     }
 
     #[test]
@@ -432,6 +521,24 @@ mod tests {
         assert_single_token!("yield", TokenKind::Keyword(KeywordKind::Yield));
         assert_single_token!("yield from", TokenKind::Keyword(KeywordKind::YieldFrom));
 
+    }
+
+    #[test]
+
+    fn test_literals() {
+        assert_single_token!("1", TokenKind::Integer(1));
+        assert_single_token!("0b1010", TokenKind::Integer(10));
+        assert_single_token!("0x1a", TokenKind::Integer(26));
+        assert_single_token!("0o10", TokenKind::Integer(8));
+        assert_single_token!("2.0", TokenKind::Double(2.0));
+        assert_single_token!("256.4", TokenKind::Double(256.4));
+        assert_single_token!("10.358", TokenKind::Double(10.358));
+        assert_single_token!("7.64E+5", TokenKind::Double(764000.0));
+        assert_single_token!("5.56E-5", TokenKind::Double(0.0000556));
+        assert_single_token!("\"Hello World\"", TokenKind::String("Hello World".to_string()));
+        assert_single_token!("'Hello World'", TokenKind::String("Hello World".to_string()));
+        assert_single_token!("b\"Hello World\"", TokenKind::String("Hello World".to_string()));
+        assert_single_token!("b'Hello World'", TokenKind::String("Hello World".to_string()));
     }
 
     #[test]
