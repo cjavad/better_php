@@ -7,4 +7,3 @@ edition = "2021"
 
 [dependencies]
 logos = "0.13.0"
-a_regex_macro = { path = "../a_regex_macro" }
