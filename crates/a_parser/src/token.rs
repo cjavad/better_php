@@ -1,6 +1,6 @@
 use logos::{Logos, Lexer};
 
-#[derive(Debug, PartialEq, Clone, Copy)]
+#[derive(Debug, PartialEq, Clone)]
 pub enum BinaryOpKind {
     Add,
     Sub,
@@ -43,9 +43,15 @@ pub enum BinaryOpKind {
     ConcatAssign,
     Coalesce,
     CoalesceAssign,
+    ObjectOperator,
+    NullSafeObjectOperator,
+    PaamayimNekudotayim,
+    Arrow,
+    Insteadof,
+    As,
 }
 
-#[derive(Debug, PartialEq, Clone, Copy)]
+#[derive(Debug, PartialEq, Clone)]
 pub enum UnaryOpKind {
     Not,
     BitNot,
@@ -66,7 +72,7 @@ pub enum UnaryOpKind {
     PreDec,
 }
 
-#[derive(Debug, PartialEq, Clone, Copy)]
+#[derive(Debug, PartialEq, Clone)]
 pub enum KeywordKind {
     // I will abuse this one
     Var,
@@ -91,7 +97,6 @@ pub enum KeywordKind {
     Enum,
     Namespace,
     Use,
-    As,
     Match,
     Switch,
     Case,
@@ -135,7 +140,6 @@ pub enum KeywordKind {
     Empty,
     // Why PHP why?
     HaltCompiler,
-    Insteadof,
     Instanceof,
     Require,
     RequireOnce,
@@ -151,10 +155,21 @@ pub enum IdentifierKind {
     Other(String),
 }
 
+#[derive(Debug, PartialEq, Clone)]
+pub enum LiteralKind {
+    Integer(i64),
+    Double(f64),
+    String(String),
+}
+
 #[allow(non_camel_case_types)]
 #[derive(Logos, Debug, PartialEq, Clone)]
 #[logos(skip r"[ \t\n\f]+")]
-pub enum TokenKind {
+pub enum Token {
+    #[token(r"=>", |_| BinaryOpKind::Arrow)]
+    #[token(r"->", |_| BinaryOpKind::ObjectOperator)]
+    #[token(r"?->", |_| BinaryOpKind::NullSafeObjectOperator)]
+    #[token(r"::", |_| BinaryOpKind::PaamayimNekudotayim)]
     #[token(r"+", |_| BinaryOpKind::Add)]
     #[token(r"-", |_| BinaryOpKind::Sub)]
     #[token(r"*", |_| BinaryOpKind::Mul)]
@@ -194,6 +209,8 @@ pub enum TokenKind {
     #[token(r".=", |_| BinaryOpKind::ConcatAssign)]
     #[token(r"??", |_| BinaryOpKind::Coalesce)]
     #[token(r"??=", |_| BinaryOpKind::CoalesceAssign)]
+    #[token(r"insteadof", |_| BinaryOpKind::Insteadof, ignore(case))]
+    #[token(r"as", |_| BinaryOpKind::As, ignore(case))]
     BinaryOp(BinaryOpKind),
     
     #[token(r"~", |_| UnaryOpKind::BitNot)]
@@ -242,7 +259,6 @@ pub enum TokenKind {
     #[token(r"enum", |_| KeywordKind::Enum, ignore(case))]
     #[token(r"namespace", |_| KeywordKind::Namespace, ignore(case))]
     #[token(r"use", |_| KeywordKind::Use, ignore(case))]
-    #[token(r"as", |_| KeywordKind::As, ignore(case))]
     #[token(r"match", |_| KeywordKind::Match, ignore(case))]
     #[token(r"switch", |_| KeywordKind::Switch, ignore(case))]
     #[token(r"case", |_| KeywordKind::Case, ignore(case))]
@@ -280,7 +296,6 @@ pub enum TokenKind {
     #[token(r"exit", |_| KeywordKind::Die, ignore(case))]
     #[token(r"empty", |_| KeywordKind::Empty, ignore(case))]
     #[token(r"__halt_compiler", |_| KeywordKind::HaltCompiler, ignore(case))]
-    #[token(r"insteadof", |_| KeywordKind::Insteadof, ignore(case))]
     #[token(r"instanceof", |_| KeywordKind::Instanceof, ignore(case))]
     #[token(r"require", |_| KeywordKind::Require, ignore(case))]
     #[token(r"require_once", |_| KeywordKind::RequireOnce, ignore(case))]
@@ -316,15 +331,6 @@ pub enum TokenKind {
     #[token("]")]
     RBracket,
 
-    #[token(r"->")]
-    ObjectOperator,
-
-    #[token(r"?->")]
-    NullSafeObjectOperator,
-
-    #[token(r"=>")]
-    Arrow,
-
     #[token(r",")]
     Comma,
 
@@ -333,9 +339,6 @@ pub enum TokenKind {
 
     #[token(r";")]
     Semicolon,
-    
-    #[token(r"::")]
-    PaamayimNekudotayim,
 
     // PHP style variables with $ prefix
     #[regex(r"\$[a-zA-Z_\x7f-\xff][a-zA-Z0-9_\x7f-\xff]*", |lex| lex.slice()[1..].to_string())]
@@ -349,6 +352,8 @@ pub enum TokenKind {
         } else if token.contains("\\") {
             IdentifierKind::RelativeNamespace(lex.slice().to_string())
         } else {
+            // This could be a class name, function name, constant
+            // Some property etc, parse it later.
             IdentifierKind::Other(lex.slice().to_string())
         }
     })]
@@ -356,22 +361,19 @@ pub enum TokenKind {
 
 
     // Match 2.0, 256.4, 10.358, 7.64E+5, 5.56E-5
-    #[regex(r"[0-9]*\.[0-9]+([eE][+-]?[0-9]+)?", |lex| lex.slice().parse().unwrap_or(0.0))]
-    Double(f64),
-
-    #[regex(r"[0-9]+", |lex| lex.slice().parse().unwrap_or(0))]
-    #[regex(r"0b[0-1]+", |lex| i64::from_str_radix(&lex.slice()[2..], 2).unwrap_or(0))]
-    #[regex(r"0x[0-9a-fA-F]+", |lex| i64::from_str_radix(&lex.slice()[2..], 16).unwrap_or(0))]
-    #[regex(r"0o[0-7]+", |lex| i64::from_str_radix(&lex.slice()[2..], 8).unwrap_or(0))]
-    Integer(i64),
-
+    #[regex(r"[0-9]*\.[0-9]+([eE][+-]?[0-9]+)?", |lex| LiteralKind::Double(lex.slice().parse().unwrap_or(0.0)))]
+    #[regex(r"[0-9]+", |lex| LiteralKind::Integer(lex.slice().parse().unwrap_or(0)))]
+    #[regex(r"0b[0-1]+", |lex| LiteralKind::Integer(i64::from_str_radix(&lex.slice()[2..], 2).unwrap_or(0)))]
+    #[regex(r"0x[0-9a-fA-F]+", |lex| LiteralKind::Integer(i64::from_str_radix(&lex.slice()[2..], 16).unwrap_or(0)))]
+    #[regex(r"0o[0-7]+", |lex| LiteralKind::Integer(i64::from_str_radix(&lex.slice()[2..], 8).unwrap_or(0)))]
     // Double quoted string both ' and " are supported
-    #[regex(r#""([^"\\]|\\.)*""#, |lex| lex.slice()[1..lex.slice().len()-1].to_string())]
-    #[regex(r#"'([^'\\]|\\.)*'"#, |lex| lex.slice()[1..lex.slice().len()-1].to_string())]
+    #[regex(r#""([^"\\]|\\.)*""#, |lex| LiteralKind::String(lex.slice()[1..lex.slice().len()-1].to_string()))]
+    #[regex(r#"'([^'\\]|\\.)*'"#, |lex| LiteralKind::String(lex.slice()[1..lex.slice().len()-1].to_string()))]
     // Also support b'' and b"" but treat input as ascii 0-255 without utf8 support
-    #[regex(r#"b"([^"\\]|\\.)*""#, |lex| lex.slice()[2..lex.slice().len()-1].to_string())]
-    #[regex(r#"b'([^'\\]|\\.)*'"#, |lex| lex.slice()[2..lex.slice().len()-1].to_string())]
-    String(String),
+    #[regex(r#"b"([^"\\]|\\.)*""#, |lex| LiteralKind::String(lex.slice()[2..lex.slice().len()-1].to_string()))]
+    #[regex(r#"b'([^'\\]|\\.)*'"#, |lex| LiteralKind::String(lex.slice()[2..lex.slice().len()-1].to_string()))]
+    Literal(LiteralKind),
+
 
 
     #[regex(r"//.*", |lex| lex.slice().to_string())]
@@ -383,8 +385,8 @@ pub enum TokenKind {
 }
 
 
-pub fn lexerize(input: &str) -> Lexer<TokenKind> {
-    TokenKind::lexer(input)
+pub fn lexerize(input: &str) -> Lexer<Token> {
+    Token::lexer(input)
 }
 
 #[cfg(test)]
@@ -393,16 +395,34 @@ mod tests {
 
     use super::*;
 
+    macro_rules! literal_string {
+        ($string: expr) => {
+            Token::Literal(LiteralKind::String($string.to_string()))
+        };
+    }
+
+    macro_rules! literal_integer {
+        ($integer: expr) => {
+            Token::Literal(LiteralKind::Integer($integer))
+        };
+    }
+
+    macro_rules! literal_double {
+        ($double: expr) => {
+            Token::Literal(LiteralKind::Double($double))
+        };
+    }
+
     // Write test macro to replace Some(Ok()) and assert_eq!()
     macro_rules! assert_single_token {
         ($source: expr, $token: expr) => {
-            assert_eq!(TokenKind::lexer($source).next(), Some(Ok($token)));
+            assert_eq!(Token::lexer($source).next(), Some(Ok($token)));
         };
     }    
 
     macro_rules! assert_tokens {
         ($source: expr, $tokens: expr) => {
-            let mut lexer = TokenKind::lexer($source);
+            let mut lexer = Token::lexer($source);
             for token in $tokens {
                 match lexer.next() {
                     Some(Ok(t)) => assert_eq!(t, *token),
@@ -415,143 +435,149 @@ mod tests {
 
     #[test]
     fn test() {
-        assert_single_token!("b\"\"", TokenKind::String("".to_string()));
+        assert_single_token!("b\"\"", literal_string!(""));
     }
 
     #[test]
     fn test_binary_op() {
-        assert_single_token!("+", TokenKind::BinaryOp(BinaryOpKind::Add));
-        assert_single_token!("-", TokenKind::BinaryOp(BinaryOpKind::Sub));
-        assert_single_token!("*", TokenKind::BinaryOp(BinaryOpKind::Mul));
-        assert_single_token!("/", TokenKind::BinaryOp(BinaryOpKind::Div));
-        assert_single_token!("%", TokenKind::BinaryOp(BinaryOpKind::Mod));
-        assert_single_token!("**", TokenKind::BinaryOp(BinaryOpKind::Pow));
-        assert_single_token!("&", TokenKind::BinaryOp(BinaryOpKind::BitAnd));
-        assert_single_token!("|", TokenKind::BinaryOp(BinaryOpKind::BitOr));
-        assert_single_token!("^", TokenKind::BinaryOp(BinaryOpKind::Xor));
-        assert_single_token!("<<", TokenKind::BinaryOp(BinaryOpKind::Shl));
-        assert_single_token!(">>", TokenKind::BinaryOp(BinaryOpKind::Shr));
-        assert_single_token!(">", TokenKind::BinaryOp(BinaryOpKind::Greater));
-        assert_single_token!("<", TokenKind::BinaryOp(BinaryOpKind::Less));
-        assert_single_token!(">=", TokenKind::BinaryOp(BinaryOpKind::GreaterEq));
-        assert_single_token!("<=", TokenKind::BinaryOp(BinaryOpKind::LessEq));
-        assert_single_token!("==", TokenKind::BinaryOp(BinaryOpKind::Eq));
-        assert_single_token!("!=", TokenKind::BinaryOp(BinaryOpKind::NotEq));
-        assert_single_token!("<>", TokenKind::BinaryOp(BinaryOpKind::NotEq));
-        assert_single_token!("<=>", TokenKind::BinaryOp(BinaryOpKind::Spaceship));
-        assert_single_token!("&&", TokenKind::BinaryOp(BinaryOpKind::And));
-        assert_single_token!("||", TokenKind::BinaryOp(BinaryOpKind::Or));
-        assert_single_token!(".", TokenKind::BinaryOp(BinaryOpKind::Concat));
-        assert_single_token!("=", TokenKind::BinaryOp(BinaryOpKind::Assign));
-        assert_single_token!("+=", TokenKind::BinaryOp(BinaryOpKind::AddAssign));
-        assert_single_token!("-=", TokenKind::BinaryOp(BinaryOpKind::SubAssign));
-        assert_single_token!("*=", TokenKind::BinaryOp(BinaryOpKind::MulAssign));
-        assert_single_token!("/=", TokenKind::BinaryOp(BinaryOpKind::DivAssign));
-        assert_single_token!("%=", TokenKind::BinaryOp(BinaryOpKind::ModAssign));
-        assert_single_token!("**=", TokenKind::BinaryOp(BinaryOpKind::PowAssign));
-        assert_single_token!("&=", TokenKind::BinaryOp(BinaryOpKind::BitAndAssign));
-        assert_single_token!("&&=", TokenKind::BinaryOp(BinaryOpKind::AndAssign));
-        assert_single_token!("|=", TokenKind::BinaryOp(BinaryOpKind::BitOrAssign));
-        assert_single_token!("||=", TokenKind::BinaryOp(BinaryOpKind::OrAssign));
-        assert_single_token!("^=", TokenKind::BinaryOp(BinaryOpKind::XorAssign));
-        assert_single_token!("<<=", TokenKind::BinaryOp(BinaryOpKind::ShlAssign));
-        assert_single_token!(">>=", TokenKind::BinaryOp(BinaryOpKind::ShrAssign));
-        assert_single_token!(".=", TokenKind::BinaryOp(BinaryOpKind::ConcatAssign));
-        assert_single_token!("??", TokenKind::BinaryOp(BinaryOpKind::Coalesce));
-        assert_single_token!("??=", TokenKind::BinaryOp(BinaryOpKind::CoalesceAssign));
+        assert_single_token!("+", Token::BinaryOp(BinaryOpKind::Add));
+        assert_single_token!("-", Token::BinaryOp(BinaryOpKind::Sub));
+        assert_single_token!("*", Token::BinaryOp(BinaryOpKind::Mul));
+        assert_single_token!("/", Token::BinaryOp(BinaryOpKind::Div));
+        assert_single_token!("%", Token::BinaryOp(BinaryOpKind::Mod));
+        assert_single_token!("**", Token::BinaryOp(BinaryOpKind::Pow));
+        assert_single_token!("&", Token::BinaryOp(BinaryOpKind::BitAnd));
+        assert_single_token!("|", Token::BinaryOp(BinaryOpKind::BitOr));
+        assert_single_token!("^", Token::BinaryOp(BinaryOpKind::Xor));
+        assert_single_token!("<<", Token::BinaryOp(BinaryOpKind::Shl));
+        assert_single_token!(">>", Token::BinaryOp(BinaryOpKind::Shr));
+        assert_single_token!(">", Token::BinaryOp(BinaryOpKind::Greater));
+        assert_single_token!("<", Token::BinaryOp(BinaryOpKind::Less));
+        assert_single_token!(">=", Token::BinaryOp(BinaryOpKind::GreaterEq));
+        assert_single_token!("<=", Token::BinaryOp(BinaryOpKind::LessEq));
+        assert_single_token!("==", Token::BinaryOp(BinaryOpKind::Eq));
+        assert_single_token!("!=", Token::BinaryOp(BinaryOpKind::NotEq));
+        assert_single_token!("<>", Token::BinaryOp(BinaryOpKind::NotEq));
+        assert_single_token!("<=>", Token::BinaryOp(BinaryOpKind::Spaceship));
+        assert_single_token!("&&", Token::BinaryOp(BinaryOpKind::And));
+        assert_single_token!("||", Token::BinaryOp(BinaryOpKind::Or));
+        assert_single_token!(".", Token::BinaryOp(BinaryOpKind::Concat));
+        assert_single_token!("=", Token::BinaryOp(BinaryOpKind::Assign));
+        assert_single_token!("+=", Token::BinaryOp(BinaryOpKind::AddAssign));
+        assert_single_token!("-=", Token::BinaryOp(BinaryOpKind::SubAssign));
+        assert_single_token!("*=", Token::BinaryOp(BinaryOpKind::MulAssign));
+        assert_single_token!("/=", Token::BinaryOp(BinaryOpKind::DivAssign));
+        assert_single_token!("%=", Token::BinaryOp(BinaryOpKind::ModAssign));
+        assert_single_token!("**=", Token::BinaryOp(BinaryOpKind::PowAssign));
+        assert_single_token!("&=", Token::BinaryOp(BinaryOpKind::BitAndAssign));
+        assert_single_token!("&&=", Token::BinaryOp(BinaryOpKind::AndAssign));
+        assert_single_token!("|=", Token::BinaryOp(BinaryOpKind::BitOrAssign));
+        assert_single_token!("||=", Token::BinaryOp(BinaryOpKind::OrAssign));
+        assert_single_token!("^=", Token::BinaryOp(BinaryOpKind::XorAssign));
+        assert_single_token!("<<=", Token::BinaryOp(BinaryOpKind::ShlAssign));
+        assert_single_token!(">>=", Token::BinaryOp(BinaryOpKind::ShrAssign));
+        assert_single_token!(".=", Token::BinaryOp(BinaryOpKind::ConcatAssign));
+        assert_single_token!("??", Token::BinaryOp(BinaryOpKind::Coalesce));
+        assert_single_token!("??=", Token::BinaryOp(BinaryOpKind::CoalesceAssign));
+
+        assert_single_token!("->", Token::BinaryOp(BinaryOpKind::ObjectOperator));
+        assert_single_token!("?->", Token::BinaryOp(BinaryOpKind::NullSafeObjectOperator));
+        assert_single_token!("::", Token::BinaryOp(BinaryOpKind::PaamayimNekudotayim));
+        assert_single_token!("=>", Token::BinaryOp(BinaryOpKind::Arrow));
+        assert_single_token!("as", Token::BinaryOp(BinaryOpKind::As));
+        assert_single_token!("insteadof", Token::BinaryOp(BinaryOpKind::Insteadof));
     }
 
     #[test]
     fn test_unary_op() {
-        assert_single_token!("~", TokenKind::UnaryOp(UnaryOpKind::BitNot));
-        assert_single_token!("!", TokenKind::UnaryOp(UnaryOpKind::Not));
-        assert_single_token!("++", TokenKind::UnaryOp(UnaryOpKind::Inc));
-        assert_single_token!("--", TokenKind::UnaryOp(UnaryOpKind::Dec));
+        assert_single_token!("~", Token::UnaryOp(UnaryOpKind::BitNot));
+        assert_single_token!("!", Token::UnaryOp(UnaryOpKind::Not));
+        assert_single_token!("++", Token::UnaryOp(UnaryOpKind::Inc));
+        assert_single_token!("--", Token::UnaryOp(UnaryOpKind::Dec));
     }
 
     #[test]
     fn test_keyword() {
-        assert_single_token!("true", TokenKind::Keyword(KeywordKind::True));
-        assert_single_token!("false", TokenKind::Keyword(KeywordKind::False));
-        assert_single_token!("null", TokenKind::Keyword(KeywordKind::Null));
-        assert_single_token!("self", TokenKind::Keyword(KeywordKind::Self_));
-        assert_single_token!("parent", TokenKind::Keyword(KeywordKind::Parent));
-        assert_single_token!("global", TokenKind::Keyword(KeywordKind::Global));
-        assert_single_token!("for", TokenKind::Keyword(KeywordKind::For));
-        assert_single_token!("foreach", TokenKind::Keyword(KeywordKind::ForEach));
-        assert_single_token!("while", TokenKind::Keyword(KeywordKind::While));
-        assert_single_token!("if", TokenKind::Keyword(KeywordKind::If));
-        assert_single_token!("else", TokenKind::Keyword(KeywordKind::Else));
-        assert_single_token!("elseif", TokenKind::Keyword(KeywordKind::ElseIf));
-        assert_single_token!("fn", TokenKind::Keyword(KeywordKind::Fn));
-        assert_single_token!("goto", TokenKind::Keyword(KeywordKind::Goto));
-        assert_single_token!("return", TokenKind::Keyword(KeywordKind::Return));
-        assert_single_token!("break", TokenKind::Keyword(KeywordKind::Break));
-        assert_single_token!("continue", TokenKind::Keyword(KeywordKind::Continue));
-        assert_single_token!("function", TokenKind::Keyword(KeywordKind::Function));
-        assert_single_token!("throw", TokenKind::Keyword(KeywordKind::Throw));
-        assert_single_token!("trait", TokenKind::Keyword(KeywordKind::Trait));
-        assert_single_token!("class", TokenKind::Keyword(KeywordKind::Class));
-        assert_single_token!("extends", TokenKind::Keyword(KeywordKind::Extends));
-        assert_single_token!("interface", TokenKind::Keyword(KeywordKind::Interface));
-        assert_single_token!("implements", TokenKind::Keyword(KeywordKind::Implements));
-        assert_single_token!("enum", TokenKind::Keyword(KeywordKind::Enum));
-        assert_single_token!("namespace", TokenKind::Keyword(KeywordKind::Namespace));
-        assert_single_token!("use", TokenKind::Keyword(KeywordKind::Use));
-        assert_single_token!("as", TokenKind::Keyword(KeywordKind::As));
-        assert_single_token!("match", TokenKind::Keyword(KeywordKind::Match));
-        assert_single_token!("switch", TokenKind::Keyword(KeywordKind::Switch));
-        assert_single_token!("case", TokenKind::Keyword(KeywordKind::Case));
-        assert_single_token!("default", TokenKind::Keyword(KeywordKind::Default));
-        assert_single_token!("try", TokenKind::Keyword(KeywordKind::Try));
-        assert_single_token!("catch", TokenKind::Keyword(KeywordKind::Catch));
-        assert_single_token!("finally", TokenKind::Keyword(KeywordKind::Finally));
-        assert_single_token!("do", TokenKind::Keyword(KeywordKind::Do));
-        assert_single_token!("const", TokenKind::Keyword(KeywordKind::Const));
-        assert_single_token!("abstract", TokenKind::Keyword(KeywordKind::Abstract));
-        assert_single_token!("static", TokenKind::Keyword(KeywordKind::Static));
-        assert_single_token!("readonly", TokenKind::Keyword(KeywordKind::Readonly));
-        assert_single_token!("public", TokenKind::Keyword(KeywordKind::Public));
-        assert_single_token!("protected", TokenKind::Keyword(KeywordKind::Protected));
-        assert_single_token!("private", TokenKind::Keyword(KeywordKind::Private));
-        assert_single_token!("final", TokenKind::Keyword(KeywordKind::Final));
-        assert_single_token!("new", TokenKind::Keyword(KeywordKind::New));
-        assert_single_token!("clone", TokenKind::Keyword(KeywordKind::Clone));
-        assert_single_token!("yield", TokenKind::Keyword(KeywordKind::Yield));
-        assert_single_token!("yield from", TokenKind::Keyword(KeywordKind::YieldFrom));
+        assert_single_token!("true", Token::Keyword(KeywordKind::True));
+        assert_single_token!("false", Token::Keyword(KeywordKind::False));
+        assert_single_token!("null", Token::Keyword(KeywordKind::Null));
+        assert_single_token!("self", Token::Keyword(KeywordKind::Self_));
+        assert_single_token!("parent", Token::Keyword(KeywordKind::Parent));
+        assert_single_token!("global", Token::Keyword(KeywordKind::Global));
+        assert_single_token!("for", Token::Keyword(KeywordKind::For));
+        assert_single_token!("foreach", Token::Keyword(KeywordKind::ForEach));
+        assert_single_token!("while", Token::Keyword(KeywordKind::While));
+        assert_single_token!("if", Token::Keyword(KeywordKind::If));
+        assert_single_token!("else", Token::Keyword(KeywordKind::Else));
+        assert_single_token!("elseif", Token::Keyword(KeywordKind::ElseIf));
+        assert_single_token!("fn", Token::Keyword(KeywordKind::Fn));
+        assert_single_token!("goto", Token::Keyword(KeywordKind::Goto));
+        assert_single_token!("return", Token::Keyword(KeywordKind::Return));
+        assert_single_token!("break", Token::Keyword(KeywordKind::Break));
+        assert_single_token!("continue", Token::Keyword(KeywordKind::Continue));
+        assert_single_token!("function", Token::Keyword(KeywordKind::Function));
+        assert_single_token!("throw", Token::Keyword(KeywordKind::Throw));
+        assert_single_token!("trait", Token::Keyword(KeywordKind::Trait));
+        assert_single_token!("class", Token::Keyword(KeywordKind::Class));
+        assert_single_token!("extends", Token::Keyword(KeywordKind::Extends));
+        assert_single_token!("interface", Token::Keyword(KeywordKind::Interface));
+        assert_single_token!("implements", Token::Keyword(KeywordKind::Implements));
+        assert_single_token!("enum", Token::Keyword(KeywordKind::Enum));
+        assert_single_token!("namespace", Token::Keyword(KeywordKind::Namespace));
+        assert_single_token!("use", Token::Keyword(KeywordKind::Use));
+        assert_single_token!("match", Token::Keyword(KeywordKind::Match));
+        assert_single_token!("switch", Token::Keyword(KeywordKind::Switch));
+        assert_single_token!("case", Token::Keyword(KeywordKind::Case));
+        assert_single_token!("default", Token::Keyword(KeywordKind::Default));
+        assert_single_token!("try", Token::Keyword(KeywordKind::Try));
+        assert_single_token!("catch", Token::Keyword(KeywordKind::Catch));
+        assert_single_token!("finally", Token::Keyword(KeywordKind::Finally));
+        assert_single_token!("do", Token::Keyword(KeywordKind::Do));
+        assert_single_token!("const", Token::Keyword(KeywordKind::Const));
+        assert_single_token!("abstract", Token::Keyword(KeywordKind::Abstract));
+        assert_single_token!("static", Token::Keyword(KeywordKind::Static));
+        assert_single_token!("readonly", Token::Keyword(KeywordKind::Readonly));
+        assert_single_token!("public", Token::Keyword(KeywordKind::Public));
+        assert_single_token!("protected", Token::Keyword(KeywordKind::Protected));
+        assert_single_token!("private", Token::Keyword(KeywordKind::Private));
+        assert_single_token!("final", Token::Keyword(KeywordKind::Final));
+        assert_single_token!("new", Token::Keyword(KeywordKind::New));
+        assert_single_token!("clone", Token::Keyword(KeywordKind::Clone));
+        assert_single_token!("yield", Token::Keyword(KeywordKind::Yield));
+        assert_single_token!("yield from", Token::Keyword(KeywordKind::YieldFrom));
 
     }
 
     #[test]
 
     fn test_literals() {
-        assert_single_token!("1", TokenKind::Integer(1));
-        assert_single_token!("0b1010", TokenKind::Integer(10));
-        assert_single_token!("0x1a", TokenKind::Integer(26));
-        assert_single_token!("0o10", TokenKind::Integer(8));
-        assert_single_token!("2.0", TokenKind::Double(2.0));
-        assert_single_token!("256.4", TokenKind::Double(256.4));
-        assert_single_token!("10.358", TokenKind::Double(10.358));
-        assert_single_token!("7.64E+5", TokenKind::Double(764000.0));
-        assert_single_token!("5.56E-5", TokenKind::Double(0.0000556));
-        assert_single_token!("\"Hello World\"", TokenKind::String("Hello World".to_string()));
-        assert_single_token!("'Hello World'", TokenKind::String("Hello World".to_string()));
-        assert_single_token!("b\"Hello World\"", TokenKind::String("Hello World".to_string()));
-        assert_single_token!("b'Hello World'", TokenKind::String("Hello World".to_string()));
+        assert_single_token!("1", literal_integer!(1));
+        assert_single_token!("0b1010", literal_integer!(10));
+        assert_single_token!("0x1a", literal_integer!(26));
+        assert_single_token!("0o10", literal_integer!(8));
+        assert_single_token!("2.0", literal_double!(2.0));
+        assert_single_token!("256.4", literal_double!(256.4));
+        assert_single_token!("10.358", literal_double!(10.358));
+        assert_single_token!("7.64E+5", literal_double!(764000.0));
+        assert_single_token!("5.56E-5", literal_double!(0.0000556));
+        assert_single_token!("\"Hello World\"", literal_string!("Hello World".to_string()));
+        assert_single_token!("'Hello World'", literal_string!("Hello World".to_string()));
+        assert_single_token!("b\"Hello World\"", literal_string!("Hello World".to_string()));
+        assert_single_token!("b'Hello World'", literal_string!("Hello World".to_string()));
     }
 
     #[test]
     fn test_combined_expr() {
 
         assert_tokens!("1 + 2 * 4 - 1;", &[
-            TokenKind::Integer(1),
-            TokenKind::BinaryOp(BinaryOpKind::Add),
-            TokenKind::Integer(2),
-            TokenKind::BinaryOp(BinaryOpKind::Mul),
-            TokenKind::Integer(4),
-            TokenKind::BinaryOp(BinaryOpKind::Sub),
-            TokenKind::Integer(1),
-            TokenKind::Semicolon,
+            literal_integer!(1),
+            Token::BinaryOp(BinaryOpKind::Add),
+            literal_integer!(2),
+            Token::BinaryOp(BinaryOpKind::Mul),
+            literal_integer!(4),
+            Token::BinaryOp(BinaryOpKind::Sub),
+            literal_integer!(1),
+            Token::Semicolon,
         ]);
     }
 
@@ -583,29 +609,29 @@ mod tests {
         }
 
         ?>", &[
-            TokenKind::OpenTag,
-            TokenKind::Comment("// This is a comment".to_string()),
-            TokenKind::Comment("/* This is a comment */".to_string()),
-            TokenKind::Comment("# This is a comment".to_string()),
-            TokenKind::Comment("/**\n         * This is a comment\n         * This is a comment\n         * This is a comment\n         */".to_string()),
-            TokenKind::Attribute,
-            TokenKind::Identifier(IdentifierKind::Other("ThisIsAnAttribute".to_string())),
-            TokenKind::RBracket,
-            TokenKind::Keyword(KeywordKind::Class),
-            TokenKind::Identifier(IdentifierKind::Other("Foo".to_string())),
-            TokenKind::LBrace,
-            TokenKind::Comment("// This is a comment".to_string()),
-            TokenKind::Comment("/* This is a comment */".to_string()),
-            TokenKind::Comment("# This is a comment".to_string()),
-            TokenKind::Comment("/**\n             * This is a comment\n             * This is a comment\n             * This is a comment\n             */".to_string()),
-            TokenKind::Attribute,
-            TokenKind::Identifier(IdentifierKind::Other("ThisIsAnAttribute".to_string())),
-            TokenKind::RBracket,
-            TokenKind::Keyword(KeywordKind::Public),
-            TokenKind::Variable("bar".to_string()),
-            TokenKind::Semicolon,
-            TokenKind::RBrace,
-            TokenKind::EndTag,
+            Token::OpenTag,
+            Token::Comment("// This is a comment".to_string()),
+            Token::Comment("/* This is a comment */".to_string()),
+            Token::Comment("# This is a comment".to_string()),
+            Token::Comment("/**\n         * This is a comment\n         * This is a comment\n         * This is a comment\n         */".to_string()),
+            Token::Attribute,
+            Token::Identifier(IdentifierKind::Other("ThisIsAnAttribute".to_string())),
+            Token::RBracket,
+            Token::Keyword(KeywordKind::Class),
+            Token::Identifier(IdentifierKind::Other("Foo".to_string())),
+            Token::LBrace,
+            Token::Comment("// This is a comment".to_string()),
+            Token::Comment("/* This is a comment */".to_string()),
+            Token::Comment("# This is a comment".to_string()),
+            Token::Comment("/**\n             * This is a comment\n             * This is a comment\n             * This is a comment\n             */".to_string()),
+            Token::Attribute,
+            Token::Identifier(IdentifierKind::Other("ThisIsAnAttribute".to_string())),
+            Token::RBracket,
+            Token::Keyword(KeywordKind::Public),
+            Token::Variable("bar".to_string()),
+            Token::Semicolon,
+            Token::RBrace,
+            Token::EndTag,
         ]);
     }
 }
