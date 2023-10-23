@@ -53,8 +53,8 @@ fn main() {
         }
         Development::Parser(file_target) => {
             let file_contents = get_file_contents_as_string(&file_target.file);
-            let mut tokens = a_parser::token::lexerize(file_contents.as_str());
-            let _ = a_parser::parser::parse(&mut tokens);
+            let tokens = a_parser::token::lexerize(file_contents.as_str());
+            let _ = a_parser::parser::Parser::new(tokens).parse();
         }
     }
 }
